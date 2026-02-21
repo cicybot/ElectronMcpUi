@@ -1,4 +1,4 @@
-export const BASE_URL = "";
+export const BASE_URL = "https://gcp-8101.cicy.de5.net";
 export const TOKEN_KEY = "ELECTRON_MCP_TOKEN";
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
