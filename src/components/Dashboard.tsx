@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
-import { getSnapshotUrl, rpc, rpcJson } from '../lib/client';
+import { getSnapshotUrl, rpc, rpcJson, BASE_URL } from '../lib/client';
 import { 
   RefreshCw, Play, Pause, X, Monitor, Settings, 
   RotateCcw, Plus, LogOut, Layout, Maximize2, 
   ChevronRight, ChevronLeft, Trash2, ExternalLink,
-  Search, Sliders, Check, AlertCircle, Terminal
+  Search, Sliders, Check, AlertCircle, Terminal, Wifi
 } from 'lucide-react';
 
 interface WindowInfo {
@@ -38,6 +38,66 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   const imgRef = useRef<HTMLImageElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [pingTime, setPingTime] = useState<number | null>(null);
+
+  // Keyboard input handler
+  useEffect(() => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      if (!selectedWinId || e.ctrlKey || e.altKey || e.metaKey) return;
+      
+      const key = e.key;
+      if (key.length !== 1 && !['Enter', 'Backspace', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Delete', 'Insert', 'Home', 'End', 'PageUp', 'PageDown'].includes(key)) {
+        return;
+      }
+
+      try {
+        const codeMap: Record<string, string> = {
+          'Enter': 'Return', 'Backspace': 'Backspace', 'Tab': 'Tab', 'Escape': 'Escape',
+          'ArrowUp': 'Up', 'ArrowDown': 'Down', 'ArrowLeft': 'Left', 'ArrowRight': 'Right',
+          'Delete': 'Delete', 'Insert': 'Insert', 'Home': 'Home', 'End': 'End',
+          'PageUp': 'PageUp', 'PageDown': 'PageDown'
+        };
+        
+        const keyCode = codeMap[key] || (key.length === 1 ? key.toUpperCase() : key);
+        
+        await rpc('control_electron_WebContents', {
+          win_id: selectedWinId,
+          code: `webContents.sendInputEvent({type: 'keyDown', keyCode: '${keyCode}', key: '${key}'})`
+        });
+        
+        if (key === 'Enter' || key === 'Tab' || key === 'Backspace') {
+          await rpc('control_electron_WebContents', {
+            win_id: selectedWinId,
+            code: `webContents.sendInputEvent({type: 'keyUp', keyCode: '${keyCode}', key: '${key}'})`
+          });
+        }
+      } catch (err) {
+        console.error('Key send failed:', err);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedWinId]);
+
+  // Ping to measure network latency
+  useEffect(() => {
+    const ping = async () => {
+      const start = Date.now();
+      try {
+        await fetch(BASE_URL.replace('/rpc', '') + '/ui/snapshot?win_id=0&token=x', { 
+          method: 'HEAD',
+          cache: 'no-store' 
+        });
+        setPingTime(Date.now() - start);
+      } catch {
+        setPingTime(null);
+      }
+    };
+    ping();
+    const interval = setInterval(ping, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Load windows on mount
   useEffect(() => {
@@ -125,13 +185,22 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     }
   };
 
-  const handleOpenWindow = async (url: string) => {
+  const handleOpenWindow = async (url: string, accountIdx: number = 0) => {
     try {
-      const existing = windows.find(w => w.url && w.url.includes(new URL(url).hostname));
+      const wins = await rpcJson<WindowInfo[]>('get_windows');
+      const allWindows = Array.isArray(wins) ? wins : [];
+      const existing = allWindows.find(w => w.url && w.url.includes(new URL(url).hostname));
+      
       if (existing) {
+        await rpc('control_electron_BrowserWindow', { win_id: existing.id, code: 'win.focus()' });
         setSelectedWinId(existing.id);
       } else {
-        await rpc('open_window', { url, width: 1200, height: 800 });
+        await rpc('open_window', { 
+          url, 
+          accountIdx,
+          reuseWindow: false,
+          options: { width: 1200, height: 800 }
+        });
         loadWindows();
       }
     } catch (e) {
@@ -255,7 +324,24 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           {windows.map(w => (
             <button
               key={w.id}
-              onClick={() => setSelectedWinId(w.id)}
+              onClick={() => {
+                setSelectedWinId(w.id);
+                localStorage.setItem('ELECTRON_MCP_SELECTED_WIN', w.id.toString());
+                // Force immediate refresh
+                if (imgRef.current && loopEnabled) {
+                  getSnapshotUrl(w.id, quality, scale).then(url => {
+                    fetch(url).then(res => res.blob()).then(blob => {
+                      const objectUrl = URL.createObjectURL(blob);
+                      const oldUrl = imgRef.current?.getAttribute('data-object-url');
+                      if (oldUrl) URL.revokeObjectURL(oldUrl);
+                      if (imgRef.current) {
+                        imgRef.current.src = objectUrl;
+                        imgRef.current.setAttribute('data-object-url', objectUrl);
+                      }
+                    });
+                  });
+                }
+              }}
               className={`w-full text-left px-3 py-3 rounded-xl text-sm transition-all group relative border ${
                 selectedWinId === w.id 
                   ? 'bg-zinc-800 border-zinc-700 text-white shadow-sm' 
@@ -296,6 +382,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               <LogOut className="w-3.5 h-3.5" /> Logout
             </button>
           </div>
+          <div className="pt-2 border-t border-zinc-800 text-center">
+            <span className="text-[10px] text-zinc-600 font-mono">v1.0.0</span>
+          </div>
         </div>
       </aside>
 
@@ -328,24 +417,31 @@ export default function Dashboard({ onLogout }: DashboardProps) {
              )}
            </div>
 
-           <div className="flex items-center gap-2">
-             <button 
-                onClick={() => {
-                  const newVal = !loopEnabled;
-                  setLoopEnabled(newVal);
-                  localStorage.setItem('ELECTRON_MCP_LOOP', String(newVal));
-                }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                  loopEnabled 
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20' 
-                    : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-zinc-200'
-                }`}
-              >
-                {loopEnabled ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                {loopEnabled ? 'Live' : 'Paused'}
-              </button>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-xs">
+                <Wifi className={`w-3.5 h-3.5 ${pingTime ? 'text-emerald-400' : 'text-red-400'}`} />
+                <span className={`font-mono ${pingTime ? 'text-zinc-300' : 'text-red-400'}`}>
+                  {pingTime ? `${pingTime}ms` : '--'}
+                </span>
+              </div>
 
               <button 
+                 onClick={() => {
+                   const newVal = !loopEnabled;
+                   setLoopEnabled(newVal);
+                   localStorage.setItem('ELECTRON_MCP_LOOP', String(newVal));
+                 }}
+                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                   loopEnabled 
+                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20' 
+                     : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-zinc-200'
+                 }`}
+               >
+                 {loopEnabled ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                 {loopEnabled ? 'Live' : 'Paused'}
+               </button>
+
+              <button
                 onClick={() => {
                   const newVal = !controlsOpen;
                   setControlsOpen(newVal);
@@ -359,7 +455,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               >
                 <Sliders className="w-4 h-4" />
               </button>
-           </div>
+            </div>
         </header>
 
         {/* Canvas */}
@@ -370,15 +466,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
              backgroundSize: '24px 24px' 
            }} />
            
-           {selectedWinId ? (
-            <div className="relative z-0 max-w-full max-h-full p-8 flex items-center justify-center">
-               <img 
-                 ref={imgRef} 
-                 onClick={handleImageClick}
-                 alt="Live capture" 
-                 className="max-w-full max-h-full object-contain shadow-2xl shadow-black rounded-lg ring-1 ring-zinc-800 bg-zinc-900 cursor-crosshair" 
-               />
-            </div>
+            {selectedWinId ? (
+             <div className="relative z-0 max-w-full max-h-full p-8 flex items-center justify-center">
+                <img 
+                  ref={imgRef} 
+                  onClick={handleImageClick}
+                  onDragStart={(e) => e.preventDefault()}
+                  draggable={false}
+                  alt="Live capture" 
+                  className="max-w-full max-h-full object-contain shadow-2xl shadow-black rounded-lg ring-1 ring-zinc-800 bg-zinc-900 cursor-crosshair select-none" 
+                />
+             </div>
           ) : (
             <div className="flex flex-col items-center gap-4 text-zinc-600 relative z-0">
               <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">

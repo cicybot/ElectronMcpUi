@@ -17,10 +17,9 @@ export default defineConfig(({mode}) => {
     },
     server: {
       port: 13011,
-      allowedHosts: ['g-electron-mcp-ui.cicy.de5.net', 'g-electron.cicy.de5.net', 'g-fast-api.cicy.de5.net', 'g-ttyd.cicy.de5.net', 'g-ttyd-api.cicy.de5.net', 'code.cicy.de5.net'],
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâ€"file watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
+      allowedHosts: true,
+      // HMR enabled
+      hmr: true,
     },
   };
 });
