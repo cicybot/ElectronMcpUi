@@ -18,7 +18,6 @@ export default defineConfig(({mode}) => {
     server: {
       port: 13011,
       allowedHosts: true,
-      // HMR enabled
       hmr: true,
     },
   };

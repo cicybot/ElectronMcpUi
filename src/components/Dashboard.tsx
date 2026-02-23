@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { getSnapshotUrl, rpc, rpcJson, BASE_URL } from '../lib/client';
+import { getSnapshotUrl, rpc, rpcJson } from '../lib/client';
 import { 
   RefreshCw, Play, Pause, X, Monitor, Settings, 
   RotateCcw, Plus, LogOut, Layout, Maximize2, 
@@ -85,10 +85,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const ping = async () => {
       const start = Date.now();
       try {
-        await fetch(BASE_URL.replace('/rpc', '') + '/ui/snapshot?win_id=0&token=x', { 
-          method: 'HEAD',
-          cache: 'no-store' 
-        });
+        await rpc('ping', {});
         setPingTime(Date.now() - start);
       } catch {
         setPingTime(null);
@@ -329,16 +326,15 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 localStorage.setItem('ELECTRON_MCP_SELECTED_WIN', w.id.toString());
                 // Force immediate refresh
                 if (imgRef.current && loopEnabled) {
-                  getSnapshotUrl(w.id, quality, scale).then(url => {
-                    fetch(url).then(res => res.blob()).then(blob => {
-                      const objectUrl = URL.createObjectURL(blob);
-                      const oldUrl = imgRef.current?.getAttribute('data-object-url');
-                      if (oldUrl) URL.revokeObjectURL(oldUrl);
-                      if (imgRef.current) {
-                        imgRef.current.src = objectUrl;
-                        imgRef.current.setAttribute('data-object-url', objectUrl);
-                      }
-                    });
+                  const url = getSnapshotUrl(w.id, quality, scale);
+                  fetch(url).then(res => res.blob()).then(blob => {
+                    const objectUrl = URL.createObjectURL(blob);
+                    const oldUrl = imgRef.current?.getAttribute('data-object-url');
+                    if (oldUrl) URL.revokeObjectURL(oldUrl);
+                    if (imgRef.current) {
+                      imgRef.current.src = objectUrl;
+                      imgRef.current.setAttribute('data-object-url', objectUrl);
+                    }
                   });
                 }
               }}

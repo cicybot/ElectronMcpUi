@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { rpc, setToken } from '../lib/client';
-import { KeyRound, Loader2, ArrowRight } from 'lucide-react';
+import { rpc, setToken, setEndpoint, getEndpoint } from '../lib/client';
+import { KeyRound, Loader2, ArrowRight, Server } from 'lucide-react';
 
 interface LoginProps {
   onLogin: () => void;
@@ -8,6 +8,7 @@ interface LoginProps {
 
 export default function Login({ onLogin }: LoginProps) {
   const [token, setTokenInput] = useState('');
+  const [endpoint, setEndpointInput] = useState(getEndpoint());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -17,22 +18,30 @@ export default function Login({ onLogin }: LoginProps) {
       setError('Token is required');
       return;
     }
+    if (!endpoint.trim()) {
+      setError('Endpoint is required');
+      return;
+    }
     setError('');
     setLoading(true);
 
     try {
       setToken(token);
-      const res = await rpc('get_windows', {});
+      setEndpoint(endpoint);
+      const res = await rpc('ping', {});
       if (res.ok) {
         onLogin();
       } else {
         setError('Invalid authentication token');
         localStorage.removeItem('ELECTRON_MCP_TOKEN');
+        localStorage.removeItem('ELECTRON_MCP_ENDPOINT');
       }
     } catch (err) {
       console.error(err);
-      setError('Connection failed. Is the server running?');
+      const message = err instanceof Error ? err.message : 'Connection failed';
+      setError(message);
       localStorage.removeItem('ELECTRON_MCP_TOKEN');
+      localStorage.removeItem('ELECTRON_MCP_ENDPOINT');
     } finally {
       setLoading(false);
     }
@@ -53,6 +62,27 @@ export default function Login({ onLogin }: LoginProps) {
 
         <form onSubmit={handleLogin} className="space-y-5">
           <div className="space-y-2">
+            <label htmlFor="endpoint" className="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-1">
+              API Endpoint
+            </label>
+            <div className="relative group">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600">
+                <Server className="w-4 h-4" />
+              </div>
+              <input
+                id="endpoint"
+                type="text"
+                value={endpoint}
+                onChange={(e) => setEndpointInput(e.target.value)}
+                placeholder="https://g-electron.cicy.de5.net"
+                className="w-full pl-11 pr-4 py-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800 text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all shadow-sm"
+                autoComplete="off"
+              />
+              <div className="absolute inset-0 rounded-xl ring-1 ring-white/5 pointer-events-none" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
             <label htmlFor="token" className="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-1">
               Access Token
             </label>
@@ -65,7 +95,6 @@ export default function Login({ onLogin }: LoginProps) {
                 placeholder="eyJhbGciOi..."
                 className="w-full px-4 py-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800 text-zinc-100 placeholder:text-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all shadow-sm"
                 autoComplete="off"
-                autoFocus
               />
               <div className="absolute inset-0 rounded-xl ring-1 ring-white/5 pointer-events-none" />
             </div>

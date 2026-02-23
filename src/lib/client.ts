@@ -1,27 +1,39 @@
-export const BASE_URL = "https://gcp-8101.cicy.de5.net";
-export const TOKEN_KEY = "ELECTRON_MCP_TOKEN";
+const DEFAULT_ENDPOINT = "https://g-electron.cicy.de5.net";
+const TOKEN_KEY = "ELECTRON_MCP_TOKEN";
+const ENDPOINT_KEY = "ELECTRON_MCP_ENDPOINT";
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
 export const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
 export const removeToken = () => localStorage.removeItem(TOKEN_KEY);
 
+export const getEndpoint = () => (localStorage.getItem(ENDPOINT_KEY) || DEFAULT_ENDPOINT).replace(/\/+$/, '');
+export const setEndpoint = (endpoint: string) => localStorage.setItem(ENDPOINT_KEY, endpoint.replace(/\/+$/, ''));
+
 export async function rpc(tool: string, args: Record<string, any> = {}) {
   const token = getToken();
-  const res = await fetch(`${BASE_URL}/rpc/${tool}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(args),
-  });
+  const endpoint = getEndpoint();
+  try {
+    const res = await fetch(`${endpoint}/rpc/${tool}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(args),
+    });
 
-  if (res.status === 401) {
-    removeToken();
-    throw new Error("Unauthorized");
+    if (res.status === 401) {
+      removeToken();
+      throw new Error("Unauthorized");
+    }
+
+    return res;
+  } catch (err) {
+    if (err instanceof TypeError && err.message === "Failed to fetch") {
+      throw new Error(`Cannot connect to ${endpoint}. Check CORS or network.`);
+    }
+    throw err;
   }
-
-  return res;
 }
 
 export async function rpcJson<T = any>(tool: string, args: Record<string, any> = {}): Promise<T> {
@@ -30,16 +42,14 @@ export async function rpcJson<T = any>(tool: string, args: Record<string, any> =
     throw new Error(`rpc/${tool} → ${res.status}`);
   }
   const data = await res.json();
-  // The original code expects the result to be in data.result.content[0].text and JSON parsed
-  // We need to be careful if the API returns something else.
-  // Based on the provided HTML: JSON.parse(data.result.content[0].text);
-  if (data.result && Array.isArray(data.result.content) && data.result.content[0]?.text) {
-     return JSON.parse(data.result.content[0].text);
+  if (data.result?.content?.[0]?.text) {
+    return JSON.parse(data.result.content[0].text);
   }
-  return data as T; 
+  return data as T;
 }
 
 export function getSnapshotUrl(winId: number, quality: number, scale: number) {
   const token = getToken();
-  return `${BASE_URL}/ui/snapshot?win_id=${winId}&quality=${quality}&scale=${scale}&token=${encodeURIComponent(token)}`;
+  const endpoint = getEndpoint();
+  return `${endpoint}/ui/snapshot?win_id=${winId}&quality=${quality}&scale=${scale}&token=${encodeURIComponent(token)}`;
 }
