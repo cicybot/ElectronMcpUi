@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, MouseEvent } from 'react';
 import { getSnapshotUrl, rpc, rpcJson } from '../lib/client';
 import { 
   RefreshCw, Play, Pause, X, Monitor, Settings, 
@@ -35,6 +35,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [bounds, setBounds] = useState({ x: 0, y: 0, w: 0, h: 0 });
   const [applyingBounds, setApplyingBounds] = useState(false);
   const [boundsFeedback, setBoundsFeedback] = useState<{ msg: string; error: boolean } | null>(null);
+
+  // Webpage snapshot settings
+  const [maxElements, setMaxElements] = useState(20);
+  const [showOverlays, setShowOverlays] = useState(false);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [snapshotDialogText, setSnapshotDialogText] = useState<string | null>(null);
 
   const imgRef = useRef<HTMLImageElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -254,7 +260,39 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     loadWindows();
   };
 
-  const handleImageClick = async (e: React.MouseEvent<HTMLImageElement>) => {
+  const handleWebpageSnapshot = async () => {
+    if (!selectedWinId) return;
+    setSnapshotLoading(true);
+    setSnapshotDialogText(null);
+    try {
+      const res = await rpc('webpage_snapshot', {
+        win_id: selectedWinId,
+        max_elements: maxElements,
+        include_screenshot: true,
+        show_overlays: showOverlays
+      });
+      const data = await res.json();
+      let text = '';
+      if (data.result?.content?.[0]?.text) {
+        try {
+          const parsed = JSON.parse(data.result.content[0].text);
+          text = parsed?.elements?.[0]?.text || JSON.stringify(parsed, null, 2);
+        } catch {
+          text = data.result.content[0].text;
+        }
+      } else {
+        text = JSON.stringify(data, null, 2);
+      }
+      setSnapshotDialogText(text || 'No data returned');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to get snapshot';
+      setSnapshotDialogText(`Error: ${msg}`);
+    } finally {
+      setSnapshotLoading(false);
+    }
+  };
+
+  const handleImageClick = async (e: MouseEvent<HTMLImageElement>) => {
     if (!selectedWinId || !imgRef.current) return;
 
     const rect = imgRef.current.getBoundingClientRect();
@@ -609,12 +647,54 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
              <div className="h-px bg-zinc-800" />
              
-             <div className="space-y-3">
-                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Danger Zone</h3>
-                <button onClick={handleCloseAll} className="w-full py-2.5 rounded-lg border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-medium transition-all flex items-center justify-center gap-2">
-                  <Trash2 className="w-3.5 h-3.5" /> Close All Windows
+              <div className="space-y-3">
+                 <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Danger Zone</h3>
+                 <button onClick={handleCloseAll} className="w-full py-2.5 rounded-lg border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-medium transition-all flex items-center justify-center gap-2">
+                   <Trash2 className="w-3.5 h-3.5" /> Close All Windows
+                 </button>
+              </div>
+
+              <div className="h-px bg-zinc-800" />
+
+              {/* Webpage Snapshot */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Webpage Snapshot</h3>
+                
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-zinc-400">Max Elements</span>
+                    <span className="text-zinc-200 font-mono">{maxElements}</span>
+                  </div>
+                  <input 
+                    type="range" min="5" max="100" step="5" 
+                    value={maxElements} 
+                    onChange={(e) => setMaxElements(parseInt(e.target.value))}
+                    className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                  />
+                </div>
+
+                <label className="flex items-center justify-between text-xs cursor-pointer">
+                  <span className="text-zinc-400">Show Overlays</span>
+                  <div className={`w-9 h-5 rounded-full transition-colors ${showOverlays ? 'bg-indigo-500' : 'bg-zinc-700'}`}>
+                    <input 
+                      type="checkbox" 
+                      checked={showOverlays}
+                      onChange={(e) => setShowOverlays(e.target.checked)}
+                      className="sr-only"
+                    />
+                    <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform ${showOverlays ? 'translate-x-4.5' : 'translate-x-0.5'} mt-0.5`} />
+                  </div>
+                </label>
+
+                <button 
+                  onClick={handleWebpageSnapshot}
+                  disabled={snapshotLoading || !selectedWinId}
+                  className="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {snapshotLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  {snapshotLoading ? 'Loading...' : 'Get Snapshot'}
                 </button>
-             </div>
+              </div>
 
            </div>
          ) : (
@@ -624,6 +704,26 @@ export default function Dashboard({ onLogout }: DashboardProps) {
            </div>
          )}
       </aside>
+
+      {/* Snapshot Dialog */}
+      {snapshotDialogText && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="w-full max-w-2xl max-h-[80vh] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+              <h3 className="text-sm font-semibold text-zinc-100">Webpage Snapshot</h3>
+              <button 
+                onClick={() => setSnapshotDialogText(null)}
+                className="p-1 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 max-h-[50vh]">
+              <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap max-h-full">{snapshotDialogText}</pre>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

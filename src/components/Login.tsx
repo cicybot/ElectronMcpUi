@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, FormEvent } from 'react';
 import { rpc, setToken, setEndpoint, getEndpoint } from '../lib/client';
 import { KeyRound, Loader2, ArrowRight, Server } from 'lucide-react';
 
@@ -12,7 +12,7 @@ export default function Login({ onLogin }: LoginProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     if (!token.trim()) {
       setError('Token is required');
