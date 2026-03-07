@@ -43,6 +43,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [snapshotDialogText, setSnapshotDialogText] = useState<string | null>(null);
 
   const imgRef = useRef<HTMLImageElement>(null);
+  const [clickPos, setClickPos] = useState<{x: number, y: number} | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [pingTime, setPingTime] = useState<number | null>(null);
 
