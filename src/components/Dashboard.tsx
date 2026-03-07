@@ -300,6 +300,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    // Show click position
+    setClickPos({ x: e.clientX, y: e.clientY });
+    setTimeout(() => setClickPos(null), 800);
+
     // Calculate relative coordinates (0.0 to 1.0)
     const rx = x / rect.width;
     const ry = y / rect.height;
