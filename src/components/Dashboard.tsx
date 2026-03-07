@@ -515,6 +515,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   alt="Live capture" 
                   className="max-w-full max-h-full object-contain shadow-2xl shadow-black rounded-lg ring-1 ring-zinc-800 bg-zinc-900 cursor-crosshair select-none" 
                 />
+                {clickPos && (
+                  <div 
+                    className="fixed pointer-events-none z-50"
+                    style={{ left: clickPos.x, top: clickPos.y }}
+                  >
+                    <div className="relative -translate-x-1/2 -translate-y-1/2">
+                      <div className="w-8 h-8 rounded-full bg-indigo-500/30 border-2 border-indigo-400 animate-ping" />
+                      <div className="absolute inset-0 w-8 h-8 rounded-full bg-indigo-500/50 border-2 border-indigo-400" />
+                    </div>
+                  </div>
+                )}
              </div>
           ) : (
             <div className="flex flex-col items-center gap-4 text-zinc-600 relative z-0">
